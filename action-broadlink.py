@@ -22,6 +22,7 @@ allAppliances = {}
 
 def findAppliances(path, room):
     global allAppliances
+    global allRooms
     appliances = []
 
     for appliance in os.listdir(path):
@@ -34,6 +35,9 @@ def findAppliances(path, room):
             else:
                 allAppliances[appliance] = {"count": 1, "rooms": [room]}
 
+        elif os.path.isfile(path + "/" + appliance):
+            allRooms[room]["ip"] = Path(path + "/" + appliance).read_text()
+
     return appliances
 
 def findRooms(dir):
@@ -41,8 +45,11 @@ def findRooms(dir):
 
     for room in os.listdir(dir):
         if os.path.isdir(dir + "/" + room):
+            if room not in allRooms:
+                allRooms[room] = {"appliances":[], "ip": None}
+
             appliances = findAppliances(dir + "/" + room, room)
-            allRooms[room] = appliances
+            allRooms[room]["appliances"] = appliances
 
 findRooms("./remotes")
 
@@ -88,10 +95,12 @@ class Broadlink(object):
         if intent_message.slots.appliance:
             appliance = remove_accents(intent_message.slots.appliance.first().value)
 
-        dev = broadlink.gendevice(0x2737, ("192.168.9.112", 80), "b0481742f7c8")
-        dev.auth()
-
         global allAppliances
+        global allRooms
+
+        if appliance not in allAppliances:
+            hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
+            return
 
         if room == None and allAppliances[appliance]["count"] == 1:
             room = allAppliances[appliance]["rooms"][0]
@@ -111,6 +120,9 @@ class Broadlink(object):
 
         contents = Path("./remotes/" + room + "/" + appliance + "/power").read_text()
         data = bytearray.fromhex(''.join(contents))
+
+        dev = broadlink.gendevice(0x2737, (allRooms[room]["ip"], 80), "b0481742f7c8")
+        dev.auth()
         dev.send_data(data)
 
         # if need to speak the execution result by tts
