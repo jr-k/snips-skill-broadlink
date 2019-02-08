@@ -36,7 +36,10 @@ def findAppliances(path, room):
                 allAppliances[appliance] = {"count": 1, "rooms": [room]}
 
         elif os.path.isfile(path + "/" + appliance):
-            allRooms[room]["ip"] = Path(path + "/" + appliance).read_text()
+            if appliance == "ip.txt":
+                allRooms[room]["ip"] = Path(path + "/" + appliance).read_text().encode("utf-8")
+            elif appliance == "mac.txt":
+                allRooms[room]["mac"] = Path(path + "/" + appliance).read_text().encode("utf-8")
 
     return appliances
 
@@ -46,7 +49,7 @@ def findRooms(dir):
     for room in os.listdir(dir):
         if os.path.isdir(dir + "/" + room):
             if room not in allRooms:
-                allRooms[room] = {"appliances":[], "ip": None}
+                allRooms[room] = {"appliances":[], "ip": None, "mac": None}
 
             appliances = findAppliances(dir + "/" + room, room)
             allRooms[room]["appliances"] = appliances
@@ -121,7 +124,7 @@ class Broadlink(object):
         contents = Path("./remotes/" + room + "/" + appliance + "/power").read_text()
         data = bytearray.fromhex(''.join(contents))
 
-        dev = broadlink.gendevice(0x2737, (allRooms[room]["ip"], 80), "b0481742f7c8")
+        dev = broadlink.gendevice(0x2737, (allRooms[room]["ip"], 80), allRooms[room]["mac"])
         dev.auth()
         dev.send_data(data)
 
