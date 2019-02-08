@@ -8,6 +8,7 @@ import broadlink
 import random
 from pathlib2 import Path
 import unicodedata
+import time
 
 CONFIG_INI = "config.ini"
 
@@ -81,59 +82,79 @@ class Broadlink(object):
         # start listening to MQTT
         self.start_blocking()
 
-    # --> Sub callback function, one per intent
-    def irGenericDeviceOnOffCallback(self, hermes, intent_message):
-        # terminate the session first if not continue
-        hermes.publish_end_session(intent_message.session_id, "")
 
-        # action code goes here...
-        print '[Received] intent: {}'.format(intent_message.intent.intent_name)
-
-        room = None
-        appliance = None
-
+    def extractHouseRooms(self, intent_message):
+        house_rooms = []
         if intent_message.slots.house_room:
-            room = remove_accents(intent_message.slots.house_room.first().value)
+            for room in intent_message.slots.house_room.all():
+                cleanEntity = remove_accents(room.value).encode("utf-8")
+                print cleanEntity
+                house_rooms.append(cleanEntity)
 
+        return house_rooms
+    
+    def extractAppliances(self, intent_message):
+        appliances = []
         if intent_message.slots.appliance:
-            appliance = remove_accents(intent_message.slots.appliance.first().value)
+            for appliance in intent_message.slots.appliance.all():
+                cleanEntity = remove_accents(appliance.value).encode("utf-8")
+                print cleanEntity
+                appliances.append(cleanEntity)
+
+        return appliances
+
+
+    def sendIrCode(self, hermes, intent_message, code):
+        house_rooms = self.extractHouseRooms(intent_message)
+        appliances = self.extractAppliances(intent_message)
 
         global allAppliances
         global allRooms
 
-        if appliance not in allAppliances:
-            hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
-            return
+        if len(house_rooms) == 0:
+            house_rooms.append(None)
 
-        if room == None and allAppliances[appliance]["count"] == 1:
-            room = allAppliances[appliance]["rooms"][0]
+        for appliance in appliances:
+            for room in house_rooms:
 
-        if room == None:
-            hermes.publish_start_session_notification(intent_message.site_id, "Veuillez preciser la piece", "")
-            return
+                if appliance not in allAppliances:
+                    hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
+                    return False
 
-        print "[Room]: " + room
-        print "[Appliance]: " + appliance
+                if room == None and allAppliances[appliance]["count"] == 1:
+                    room = allAppliances[appliance]["rooms"][0]
 
-        cmd = "./remotes/"+room+"/"+appliance+"/power"
+                if room == None:
+                    hermes.publish_start_session_notification(intent_message.site_id, "Veuillez preciser la piece", "")
+                    return False
 
-        if not os.path.isfile(cmd):
-            hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
-            return
+                print "[Room]: " + room
+                print "[Appliance]: " + appliance
 
-        contents = Path("./remotes/" + room + "/" + appliance + "/power").read_text()
-        data = bytearray.fromhex(''.join(contents))
+                cmd = "./remotes/" + room + "/" + appliance + "/" + code
 
-        dev = broadlink.gendevice(0x2737, (allRooms[room]["ip"], 80), allRooms[room]["mac"])
-        dev.auth()
-        dev.send_data(data)
+                if not os.path.isfile(cmd):
+                    hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
+                    return False
 
-        # if need to speak the execution result by tts
-        hermes.publish_start_session_notification(intent_message.site_id, ACK[random.randint(0, len(ACK) - 1)], "")
+                contents = Path(cmd).read_text()
+                data = bytearray.fromhex(''.join(contents))
 
-    # --> Master callback function, triggered everytime an intent is recognized
+                dev = broadlink.gendevice(0x2737, (allRooms[room]["ip"], 80), allRooms[room]["mac"])
+                dev.auth()
+                dev.send_data(data)
+
+        return True
+
+    def irGenericDeviceOnOffCallback(self, hermes, intent_message):
+        hermes.publish_end_session(intent_message.session_id, "")
+        print '[Received] intent: {}'.format(intent_message.intent.intent_name)
+        success = self.sendIrCode(hermes, intent_message, "power")
+
+        if success:
+            hermes.publish_start_session_notification(intent_message.site_id, ACK[random.randint(0, len(ACK) - 1)], "")
+
     def master_intent_callback(self,hermes, intent_message):
-
         intent_name = intent_message.intent.intent_name
         if ':' in intent_name:
             intent_name = intent_name.split(":")[1]
