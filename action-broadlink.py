@@ -16,7 +16,7 @@ MQTT_IP_ADDR = "localhost"
 MQTT_PORT = 1883
 MQTT_ADDR = "{}:{}".format(MQTT_IP_ADDR, str(MQTT_PORT))
 
-ACK = ["Trait bien", "OK", "daccord", "sait fait", "Pas de problaime", "entendu"]
+ACK = [u"Très bien", "OK", "daccord", u"C'est fait", u"Pas de problème", "entendu"]
 
 allRooms = {}
 allAppliances = {}
@@ -154,6 +154,30 @@ class Broadlink(object):
         if success:
             hermes.publish_start_session_notification(intent_message.site_id, ACK[random.randint(0, len(ACK) - 1)], "")
 
+    def irGenericDeviceVolumeUpCallback(self, hermes, intent_message):
+        hermes.publish_end_session(intent_message.session_id, "")
+        print '[Received] intent: {}'.format(intent_message.intent.intent_name)
+
+        success = False
+
+        for i in range(0,4):
+            success = self.sendIrCode(hermes, intent_message, "volume_up")
+
+        if success:
+            hermes.publish_start_session_notification(intent_message.site_id, ACK[random.randint(0, len(ACK) - 1)], "")
+
+    def irGenericDeviceVolumeDownCallback(self, hermes, intent_message):
+        hermes.publish_end_session(intent_message.session_id, "")
+        print '[Received] intent: {}'.format(intent_message.intent.intent_name)
+
+        success = False
+
+        for i in range(0,4):
+            success = self.sendIrCode(hermes, intent_message, "volume_down")
+
+        if success:
+            hermes.publish_start_session_notification(intent_message.site_id, ACK[random.randint(0, len(ACK) - 1)], "")
+
     def master_intent_callback(self,hermes, intent_message):
         intent_name = intent_message.intent.intent_name
         if ':' in intent_name:
@@ -162,6 +186,10 @@ class Broadlink(object):
             self.irGenericDeviceOnOffCallback(hermes, intent_message)
         if intent_name == 'irGenericDeviceOff':
             self.irGenericDeviceOnOffCallback(hermes, intent_message)
+        if intent_name == 'irGenericDeviceVolumeUp':
+            self.irGenericDeviceVolumeUpCallback(hermes, intent_message)
+        if intent_name == 'irGenericDeviceVolumeDown':
+            self.irGenericDeviceVolumeDownCallback(hermes, intent_message)
 
     # --> Register callback function and start MQTT
     def start_blocking(self):
