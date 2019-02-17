@@ -78,6 +78,11 @@ class Broadlink(object):
         except :
             self.config = None
 
+        self.defaultRoom = None
+        self.defaultAppliance = None
+
+        self.defaultRoom = self.config["global"]["default_room"]
+        self.defaultAppliance = self.config["global"]["default_appliance"]
 
         # start listening to MQTT
         self.start_blocking()
@@ -104,7 +109,7 @@ class Broadlink(object):
         return appliances
 
 
-    def sendIrCode(self, hermes, intent_message, code):
+    def sendIrCode(self, hermes, intent_message, code, subappliance=None):
         house_rooms = self.extractHouseRooms(intent_message)
         appliances = self.extractAppliances(intent_message)
 
@@ -112,7 +117,10 @@ class Broadlink(object):
         global allRooms
 
         if len(house_rooms) == 0:
-            house_rooms.append(None)
+            house_rooms.append(self.defaultRoom)
+
+        if len(appliances) == 0:
+            appliances.append(self.defaultAppliance)
 
         for appliance in appliances:
             for room in house_rooms:
@@ -121,17 +129,15 @@ class Broadlink(object):
                     hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
                     return False
 
-                if room == None and allAppliances[appliance]["count"] == 1:
-                    room = allAppliances[appliance]["rooms"][0]
-
-                if room == None:
-                    hermes.publish_start_session_notification(intent_message.site_id, "Veuillez preciser la piece", "")
-                    return False
-
                 print "[Room]: " + room
                 print "[Appliance]: " + appliance
 
-                cmd = "./remotes/" + room + "/" + appliance + "/" + code
+                cmd = "./remotes/" + room + "/" + appliance + "/"
+
+                if subappliance != None:
+                    cmd = cmd + subappliance + "/"
+
+                cmd = cmd + code
 
                 if not os.path.isfile(cmd):
                     hermes.publish_start_session_notification(intent_message.site_id, "Cet appareil nexiste pas", "")
@@ -145,6 +151,21 @@ class Broadlink(object):
                 dev.send_data(data)
 
         return True
+
+    def irTvDeviceSourceSetCallback(self, hermes, intent_message):
+        hermes.publish_end_session(intent_message.session_id, "")
+        print '[Received] intent: {}'.format(intent_message.intent.intent_name)
+
+        subappliance = None
+
+        if intent_message.slots.tv_source:
+            subappliance = intent_message.slots.tv_source.first().value
+
+        success = self.sendIrCode(hermes, intent_message, "set", subappliance)
+
+        if success:
+            hermes.publish_start_session_notification(intent_message.site_id, ACK[random.randint(0, len(ACK) - 1)], "")
+
 
     def irGenericDeviceOnOffCallback(self, hermes, intent_message):
         hermes.publish_end_session(intent_message.session_id, "")
@@ -184,12 +205,14 @@ class Broadlink(object):
             intent_name = intent_name.split(":")[1]
         if intent_name == 'irGenericDeviceOn':
             self.irGenericDeviceOnOffCallback(hermes, intent_message)
-        if intent_name == 'irGenericDeviceOff':
+        elif intent_name == 'irGenericDeviceOff':
             self.irGenericDeviceOnOffCallback(hermes, intent_message)
-        if intent_name == 'irGenericDeviceVolumeUp':
+        elif intent_name == 'irGenericDeviceVolumeUp':
             self.irGenericDeviceVolumeUpCallback(hermes, intent_message)
-        if intent_name == 'irGenericDeviceVolumeDown':
+        elif intent_name == 'irGenericDeviceVolumeDown':
             self.irGenericDeviceVolumeDownCallback(hermes, intent_message)
+        elif intent_name == 'irTvDeviceSourceSet':
+            self.irTvDeviceSourceSetCallback(hermes, intent_message)
 
     # --> Register callback function and start MQTT
     def start_blocking(self):
